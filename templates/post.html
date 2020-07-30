@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Просмотр записи{% endblock %}
+{% block header %}Запись пользователя {{ author.get_full_name }}{% endblock %}
+{% block content %}
+
+<div class="row">
+    {% include 'includes/card_author.html' %}
+
+    <div class="col-md-9">
+
+        {% include 'includes/card_post.html' with post=post %}
+
+        {% include 'includes/comments.html' %}
+
+    </div>
+</div>
+{% endblock %}
