@@ -9,9 +9,14 @@ class PostTests(TestCase):
         cache.clear()
         self.no_auth_client = Client()
         self.auth_client = Client()
+        self.auth_client2 = Client()
         self.user = User.objects.create_user(
             username='testuser',
             email='test@test.ru',
+        )
+        self.user2 = User.objects.create_user(
+            username='testuser2',
+            email='test2@test.ru',
         )
         self.group = Group.objects.create(
             title='test',
@@ -19,6 +24,7 @@ class PostTests(TestCase):
             description='empty'
         )
         self.auth_client.force_login(self.user)
+        self.auth_client2.force_login(self.user2)
 
     def create_post(self):
         return Post.objects.create(
@@ -114,6 +120,12 @@ class PostTests(TestCase):
             follow=True)
         response = self.auth_client.get(reverse('index'))
         self.assertNotContains(response, 'test cache')
+
+    def test_auth_follow_unfollow(self):
+        self.auth_client.get(reverse('profile_follow', kwargs={'username': self.user2.username}))
+        self.assertEqual(self.user.follower.count(), 1)
+        self.auth_client.get(reverse('profile_unfollow', kwargs={'username': self.user2.username}))
+        self.assertEqual(self.user.follower.count(), 0)
 
 
 class ServerErrorsTest(TestCase):
