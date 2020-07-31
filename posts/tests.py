@@ -10,6 +10,7 @@ class PostTests(TestCase):
         self.no_auth_client = Client()
         self.auth_client = Client()
         self.auth_client2 = Client()
+        self.auth_client3 = Client()
         self.user = User.objects.create_user(
             username='testuser',
             email='test@test.ru',
@@ -18,6 +19,10 @@ class PostTests(TestCase):
             username='testuser2',
             email='test2@test.ru',
         )
+        self.user3 = User.objects.create_user(
+            username='testuser3',
+            email='test3@test.ru',
+        )
         self.group = Group.objects.create(
             title='test',
             slug='test_group',
@@ -25,6 +30,7 @@ class PostTests(TestCase):
         )
         self.auth_client.force_login(self.user)
         self.auth_client2.force_login(self.user2)
+        self.auth_client3.force_login(self.user3)
 
     def create_post(self):
         return Post.objects.create(
@@ -122,10 +128,46 @@ class PostTests(TestCase):
         self.assertNotContains(response, 'test cache')
 
     def test_auth_follow_unfollow(self):
-        self.auth_client.get(reverse('profile_follow', kwargs={'username': self.user2.username}))
+        self.auth_client.get(reverse('profile_follow',
+                                     kwargs={'username': self.user2.username}))
         self.assertEqual(self.user.follower.count(), 1)
-        self.auth_client.get(reverse('profile_unfollow', kwargs={'username': self.user2.username}))
+        self.auth_client.get(reverse('profile_unfollow',
+                                     kwargs={'username': self.user2.username}))
         self.assertEqual(self.user.follower.count(), 0)
+
+    def test_add_comment(self):
+        post = self.create_post()
+        self.auth_client.post(reverse('add_comment',
+                                      kwargs={'username': post.author.username,
+                                              'post_id': post.id}),
+                              data={'post': post,
+                                    'author': post.author.username,
+                                    'text': 'new test comment'}, follow=True)
+        self.assertEqual(post.comments.count(), 1)
+
+    def test_no_auth_add_comment(self):
+        post = self.create_post()
+        response = self.no_auth_client.post(
+            reverse('add_comment', kwargs={'username': post.author.username,
+                                           'post_id': post.id}),
+            data={'post': post, 'author': post.author.username,
+                  'text': 'new test comment'})
+        self.assertEqual(post.comments.count(), 0)
+        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(
+            response,
+            f'/auth/login/?next=/{post.author.username}/{post.id}/comment')
+
+    def test_follow_post(self):
+        self.create_post()
+        self.auth_client2.get(reverse(
+            'profile_follow', kwargs={'username': self.user.username}))
+        response = self.auth_client.get(reverse('follow_index'))
+        response2 = self.auth_client2.get(reverse('follow_index'))
+        response3 = self.auth_client3.get(reverse('follow_index'))
+        self.assertNotContains(response, 'test text new post')
+        self.assertContains(response2, 'test text new post')
+        self.assertNotContains(response3, 'test text new post')
 
 
 class ServerErrorsTest(TestCase):
