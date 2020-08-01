@@ -1,4 +1,11 @@
-from django.test import TestCase, Client
+import io
+import tempfile
+from unittest import mock
+
+from PIL import Image
+from django.core.files import File
+from django.core.files.base import ContentFile
+from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from posts.models import Post, Group, User
 from django.core.cache import cache
@@ -46,13 +53,18 @@ class PostTests(TestCase):
             image=image)
 
     def check_text_in_url(self, text):
+        author = self.post.author
+        group = self.post.group
         for url in (
             reverse('index'),
             reverse('profile', kwargs={'username': self.user.username}),
             reverse('post_view', kwargs={'username': self.user.username,
                                          'post_id': self.post.id})):
             response = self.auth_client.get(url)
-            return self.assertContains(response, text)
+            return (self.assertContains(response, text),
+                    self.assertEqual(response.context['paginator'].count, 1),
+                    self.assertEqual(response.context['post'].author, author),
+                    self.assertEqual(response.context['post'].group, group))
 
     def test_profile(self):
         response = self.no_auth_client.get(
@@ -98,25 +110,38 @@ class PostTests(TestCase):
         self.check_text_in_url('<img')
 
     def test_post_with_image(self):
-        with open('media/test_img.png', 'rb') as img:
-            response = self.auth_client.post(
-                reverse('new_post'),
-                data={'text': 'image', 'group': self.group.id, 'image': img},
-                follow=True
-            )
-            self.assertEqual(response.status_code, 200)
-            self.assertContains(response, '<img')
-            self.assertEqual(Post.objects.count(), 1)
+        with tempfile.TemporaryDirectory() as temp_directory:
+            with override_settings(MEDIA_ROOT=temp_directory):
+                byte_img = io.BytesIO()
+                im = Image.new("RGB", size=(500, 500), color=(255, 0, 0, 0))
+                im.save(byte_img, format='png')
+                byte_img.seek(0)
+                response = self.auth_client.post(
+                    reverse('new_post'),
+                    data={'text': 'image',
+                          'group': self.group.id,
+                          'image': ContentFile(byte_img.read(), name='t.png')},
+                    follow=True
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, '<img')
+                self.assertEqual(Post.objects.count(), 1)
 
     def test_not_image_upload(self):
-        with open('media/test.txt', 'rb') as img:
-            response = self.auth_client.post(
-                reverse('new_post'),
-                data={'text': 'image', 'group': self.group.id, 'image': img},
-                follow=True
-            )
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(Post.objects.count(), 0)
+        error_text = (
+            'Загрузите правильное изображение.'
+            ' Файл, который вы загрузили, поврежден'
+            ' или не является изображением.'
+        )
+        file_mock = mock.MagicMock(spec=File, name='test.txt')
+        response = self.auth_client.post(
+            reverse('new_post'),
+            data={'text': 'image', 'group': self.group.id, 'image': file_mock},
+            follow=True
+        )
+        self.assertFormError(response, form='form', field='image',
+                             errors=error_text)
+        self.assertEqual(Post.objects.count(), 0)
 
     def test_cache_index(self):
         self.auth_client.get(reverse('index'))
@@ -127,13 +152,20 @@ class PostTests(TestCase):
         response = self.auth_client.get(reverse('index'))
         self.assertNotContains(response, 'test cache')
 
-    def test_auth_follow_unfollow(self):
+    def test_auth_follow(self):
+        self.assertEqual(self.user.follower.count(), 0)
+        self.auth_client.get(reverse('profile_follow',
+                                     kwargs={'username': self.user2.username}))
+        self.assertEqual(self.user.follower.count(), 1)
+
+    def test_auth_unfollow(self):
         self.auth_client.get(reverse('profile_follow',
                                      kwargs={'username': self.user2.username}))
         self.assertEqual(self.user.follower.count(), 1)
         self.auth_client.get(reverse('profile_unfollow',
                                      kwargs={'username': self.user2.username}))
         self.assertEqual(self.user.follower.count(), 0)
+
 
     def test_add_comment(self):
         post = self.create_post()

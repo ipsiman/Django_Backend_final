@@ -76,7 +76,7 @@ def profile(request, username):
     following_count = author.following.count()
     following = False
     if user.is_authenticated:
-        if user.follower.filter(user=user, author=author).count() == 1:
+        if user.follower.filter(user=user, author=author).exists():
             following = True
     return render(
         request,
@@ -97,13 +97,12 @@ def post_view(request, username, post_id):
     author = post.author
     user = request.user
     post_count = author.posts.count()
-    print(post_count)
     follower_count = author.follower.count()
     following_count = author.following.count()
     form = CommentForm()
     following = False
     if user.is_authenticated:
-        if user.follower.filter(user=user, author=author).count() == 1:
+        if user.follower.filter(user=user, author=author).exists():
             following = True
     items = post.comments.all()
     return render(
@@ -126,7 +125,7 @@ def post_view(request, username, post_id):
 def post_edit(request, username, post_id):
     post = get_object_or_404(Post, id=post_id, author__username=username)
     author = post.author
-    if not author == request.user:
+    if author != request.user:
         return redirect(
             'post_view',
             username=author.username,
@@ -169,8 +168,14 @@ def add_comment(request, username, post_id):
 
 @login_required
 def follow_index(request):
-    user_follows = User.objects.get(
-        id=request.user.id).follower.all().values_list('author')
+    user_follows = (
+        User
+        .objects
+        .get(id=request.user.id)
+        .follower
+        .all()
+        .values_list('author')
+    )
     post_list = Post.objects.filter(author__in=user_follows)
     paginator = Paginator(post_list, 10)
     page_number = request.GET.get('page')
@@ -186,11 +191,8 @@ def follow_index(request):
 def profile_follow(request, username):
     author = User.objects.get(username=username)
     user = request.user
-    following = user.follower.filter(user=user, author=author).count()
-    if request.user != author and following == 0:
-        follower = Follow.objects.create(user=user, author=author)
-        follower.save()
-
+    if user != author:
+        Follow.objects.get_or_create(user=user, author=author)
     return redirect('profile', username=username)
 
 
