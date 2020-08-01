@@ -74,10 +74,10 @@ def profile(request, username):
     post_count = paginator.count
     follower_count = author.follower.count()
     following_count = author.following.count()
-    following = False
-    if user.is_authenticated:
-        if user.follower.filter(user=user, author=author).exists():
-            following = True
+    following = (
+        request.user.is_authenticated
+        and Follow.objects.filter(user=user, author=author).exists()
+    )
     return render(
         request,
         'profile.html',

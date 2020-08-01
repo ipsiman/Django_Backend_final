@@ -60,11 +60,12 @@ class PostTests(TestCase):
             reverse('profile', kwargs={'username': self.user.username}),
             reverse('post_view', kwargs={'username': self.user.username,
                                          'post_id': self.post.id})):
-            response = self.auth_client.get(url)
-            return (self.assertContains(response, text),
-                    self.assertEqual(response.context['paginator'].count, 1),
-                    self.assertEqual(response.context['post'].author, author),
-                    self.assertEqual(response.context['post'].group, group))
+            with self.subTest(url=url):
+                response = self.auth_client.get(url)
+                #  проверку паджинатора убрал - его нет на странице с постом
+                self.assertContains(response, text),
+                self.assertEqual(response.context['post'].author, author),
+                self.assertEqual(response.context['post'].group, group)
 
     def test_profile(self):
         response = self.no_auth_client.get(
